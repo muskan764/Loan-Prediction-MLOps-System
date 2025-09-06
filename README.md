@@ -1,67 +1,70 @@
-# 💳 Loan Prediction MLOps System
+# Loan Prediction MLOps Project (Prometheus + Grafana, no Docker)
 
-This project is an **end-to-end MLOps pipeline** for **loan approval prediction** using **Gradient Boosting Classifier**.
+This repo contains a complete, minimal MLOps setup for a Loan Prediction model with:
+- **FastAPI** model service exposing `/predict`, `/health`, `/metrics`
+- **Prometheus** scraping metrics from the API and a **drift exporter**
+- **Grafana** dashboard ready to import
+- **No Docker**: instructions use native installs and `systemd` (optional) or direct CLI.
 
-It integrates **FastAPI for deployment**, **Prometheus & Grafana for monitoring**, and **Population Stability Index (PSI) for drift detection**.  
+## Quickstart
 
-The system ensures **high availability, low latency, automated CI/CD, and transparency** in model-driven decision-making.
-
----------------------------------------------------------------------------------------------------
-
-## ⚙️ Features
-
-- **Machine Learning Model**  
-  - Gradient Boosting Classifier with **82.3% accuracy**  
-  - Trained on historical loan application data  
-
-- **API Deployment**  
-  - **FastAPI-based RESTful API** for real-time predictions  
-  - Sub-100ms response latency (p95) with **0% error rate**  
-
-- **Monitoring & Drift Detection**  
-  - **Prometheus + Grafana** dashboards for real-time metrics  
-  - **Population Stability Index (PSI)** for detecting data drift  
-
-- **MLOps Integration**  
-  - CI/CD automation with **GitHub Actions**  
-  - Seamless retraining and redeployment workflow  
-  - **100% uptime achieved during testing**  
-
----------------------------------------------------------------------------------------------------
-
-## 🚀 Installation & Usage
-
-1. Clone the repository:
+### 1) Create & activate a Python environment
 ```bash
-git clone https://github.com/muskan764/loan-prediction-mlops.git
-cd loan-prediction-mlops
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-Install dependencies:
+### 2) Train (or re-train) the model
+```bash
+python src/train.py --data ./data/loan_approval_dataset.csv --target " loan_status" --out ./models/loan_model.pkl
+```
 
-pip install -r requirements.txt
-Train the model:
+### 3) Run the API (port 8000)
+```bash
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+```
 
-python src/train.py
+### 4) Install & run Prometheus (native)
+- Download Prometheus for your OS: https://prometheus.io/download/
+- Start it pointing to `./configs/prometheus.yml`:
+```bash
+./prometheus --config.file=./configs/prometheus.yml
+```
+Prometheus will scrape:
+- `http://localhost:8000/metrics` (API)
+- `http://localhost:8002/metrics` (drift exporter)
 
-Start the FastAPI server:
+### 5) Start the drift exporter (port 8002)
+```bash
+python monitoring/drift_exporter.py --train ./data/loan_approval_dataset.csv --log ./monitoring/inference_log.parquet --port 8002
+```
 
-uvicorn api.main:app --reload
+### 6) Install & run Grafana (native)
+- Download Grafana: https://grafana.com/grafana/download
+- Start Grafana, then add Prometheus as a data source (URL: `http://localhost:9090` by default).
+- Import the dashboard from `dashboards/loan_dashboard.json`.
 
-Access the API at:
+## API
 
-http://127.0.0.1:8000/docs
+**POST** `/predict` — body is a JSON object with feature names/values.
+Unknown/missing features are handled via the pipeline imputers/encoders.
 
----------------------------------------------------------------------------------------------------
+Example:
+```json
+{ "Gender": "Male", "Married": "Yes", "ApplicantIncome": 5000, "Credit_History": 1 }
+```
 
-## 📊 Key Deliverables
+**GET** `/metrics` — Prometheus metrics exposition.
 
-✅ Loan approval prediction system with 82.3% accuracy
+**GET** `/health` — simple health probe.
 
-✅ FastAPI REST API with sub-100ms latency (p95)
+## Monitoring
 
-✅ Monitoring dashboards with Prometheus & Grafana
+- **Requests & latency** via Prometheus counters and histograms.
+- **Model score** gauge updates with the last `predict_proba` output.
+- **Data drift (PSI)** computed by `monitoring/drift_exporter.py` on recent inference logs.
 
-✅ PSI-based drift detection for data stability
+## CI (GitHub Actions)
 
-✅ CI/CD with GitHub Actions (30% improved deployment reliability)
+This workflow runs lint + unit tests + a quick training to ensure pipelines load.
